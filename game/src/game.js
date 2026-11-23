@@ -126,6 +126,13 @@
     });
   }
 
+  // End screen's MAIN LAGI: a fresh match in the same mode.
+  function playAgain() {
+    var mode = state ? state.mode : 2;
+    startMatch(mode);
+    root.StarRender.hideTitle();
+  }
+
   // Leave the duel: throw the match away (fresh state, fresh match id so
   // no pending AI timeout can touch it) and show the title again.
   function exitToTitle() {
@@ -144,6 +151,28 @@
   function clearSelection() {
     ui.selectedHand = null; ui.selectedTool = null; ui.selectedAttacker = null;
     if (root.StarRender) root.StarRender.hidePreview();
+  }
+
+  // ---- Animated play hand (transparent PNG sprites) ----
+  // Capture the hand's start point BEFORE the card leaves the hand; the
+  // returned finisher runs AFTER refresh with the target selector and
+  // slides the hand from the player's (or AI's) side to the slot.
+  function rectOf(sel) {
+    var n = document.querySelector(sel);
+    if (!n) return null;
+    var r = n.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  function startHandCarry(sideIdx, cardUid) {
+    var from = sideIdx === 0
+      ? rectOf('.hand-row .card[data-uid="' + cardUid + '"]')
+      : rectOf('.lane-p' + (sideIdx + 1) + ' .side-face');
+    if (!from) return function () {};
+    return function (sel, fallbackSel) {
+      var to = rectOf(sel) || (fallbackSel ? rectOf(fallbackSel) : null);
+      if (to) root.StarRender.showHand(from, to, sideIdx !== 0);
+    };
   }
 
   function me() { return state.sides[0]; }
@@ -379,17 +408,29 @@
       if (state.phase !== 'ai' || state.current !== idx) return; // game ended or moved on
       if (step >= plan.length) { nextSide(); return; }
       var a = plan[step++];
+      var handFinish = null, handSel = null, handFb = null;
       if (a.type === 'play') {
+        // Creatures ride the hand to their slot; instant tools just happen.
+        if (a.card.kind === 'creature') {
+          handFinish = startHandCarry(idx, a.card.uid);
+          handSel = '.lane-p' + (idx + 1) + ' .table-row .card[data-uid="' + a.card.uid + '"]';
+          handFb = '.lane-p' + (idx + 1) + ' .table-row';
+        }
         playCard(idx, a.card, null, -1);
       } else if (a.type === 'playTarget') {
+        handFinish = startHandCarry(idx, a.card.uid);
+        handSel = '.lane-p' + (a.targetSide + 1) + ' .table-row .card[data-uid="' + a.targetUid + '"]';
+        handFb = '.lane-p' + (a.targetSide + 1) + ' .table-row';
         playCard(idx, a.card, a.targetUid, a.targetSide);
       } else if (a.type === 'playFace') {
+        handFinish = startHandCarry(idx, a.card.uid);
+        handSel = '.lane-p' + (a.targetSide + 1) + ' .side-face';
         playCard(idx, a.card, null, a.targetSide);
       } else if (a.type === 'attack') {
         var atk = findCard(side.table, a.attackerUid);
         if (atk && atk.canAttack) attackWith(atk, a.targetSide, a.targetUid);
       }
-      if (state.phase === 'ai') { refresh(); setTimeout(nextAction, 450); }
+      if (state.phase === 'ai') { refresh(); if (handFinish) handFinish(handSel, handFb); setTimeout(nextAction, 450); }
       else refresh();
     }
     setTimeout(nextAction, 500);
@@ -409,17 +450,26 @@
     }
     if (card.target === 'none') {
       var wasTool = card.kind !== 'creature';
+      var finish = wasTool ? null : startHandCarry(0, card.uid);
       playCard(0, card, null, -1);
       clearSelection();
       if (wasTool) root.StarRender.spawnBurst('cast');
-      if (!checkEnd()) refresh();
+      var ended = checkEnd();
+      if (!ended) refresh();
+      if (finish && !ended) finish('.lane-p1 .table-row .card[data-uid="' + card.uid + '"]', '.lane-p1 .table-row');
       return;
     }
     // Targeted card: select it, show the big preview, then click a target.
     if (ui.selectedTool === card) { clearSelection(); refresh(); return; }
     ui.selectedTool = card;
+    // Mark the hand card itself as selected too, so the player can see
+    // WHICH card is picked (render.js already styles .card.selected —
+    // it just never got set). Without this the only visible sign of the
+    // pick is the big preview, and the player cannot find the card to
+    // tap again to cancel.
+    ui.selectedHand = card.uid;
     ui.selectedAttacker = null;
-    root.StarRender.showPreview(card);
+    root.StarRender.showPreview(card, function () { clearSelection(); refresh(); });
     log(card.name + ': pilih target di meja.');
     refresh();
   }
@@ -431,10 +481,13 @@
       var ok = (tool.target === 'allyCrew' && sideIdx === 0) ||
                (tool.target === 'enemyCrew' && sideIdx !== 0);
       if (!ok) { log('Target tidak cocok untuk ' + tool.name + '.'); return; }
+      var finishT = startHandCarry(0, tool.uid);
       playCard(0, tool, card.uid, sideIdx);
       root.StarRender.spawnBurst('cast');
       clearSelection();
-      if (!checkEnd()) refresh();
+      var endedT = checkEnd();
+      if (!endedT) refresh();
+      if (!endedT) finishT('.lane-p' + (sideIdx + 1) + ' .table-row .card[data-uid="' + card.uid + '"]', '.lane-p' + (sideIdx + 1) + ' .table-row');
       return;
     }
     if (sideIdx === 0) {
@@ -460,10 +513,13 @@
     if (state.phase !== 'player' || sideIdx === 0) return;
     if (ui.selectedTool && ui.selectedTool.target === 'enemyFace') {
       var tool = ui.selectedTool;
+      var finishF = startHandCarry(0, tool.uid);
       playCard(0, tool, null, sideIdx);
       root.StarRender.spawnBurst('cast');
       clearSelection();
-      if (!checkEnd()) refresh();
+      var endedF = checkEnd();
+      if (!endedF) refresh();
+      if (!endedF) finishF('.lane-p' + (sideIdx + 1) + ' .side-face', null);
       return;
     }
     if (ui.selectedAttacker) {
@@ -557,6 +613,24 @@
       if (root.StarBGM) root.StarBGM.setMuted(muted);
     });
     document.getElementById('exit-btn').addEventListener('click', askExit);
+    // Clicking EMPTY table area cancels a selection. The preview covers
+    // the whole screen with pointer-events:none, so a tap on it falls
+    // through to whatever is underneath — a creature (plays the card!),
+    // the TURN button (ends the turn!) or nothing. That is why cancelling
+    // "sometimes" failed: the only ways out were tapping the exact small
+    // hand card again or pressing Esc (which does not exist on a phone).
+    // This delegated handler makes any tap on non-interactive table area
+    // a cancel. Card/face/button taps bubble up too, but they are skipped
+    // below (their own handlers already ran first), so playing and
+    // targeting are unaffected.
+    document.getElementById('table').addEventListener('click', function (e) {
+      if (!state || state.phase !== 'player') return;
+      if (!ui.selectedTool && !ui.selectedAttacker) return;
+      var t = e.target;
+      if (t && t.closest && t.closest('.card, .side-face, button, .hand-back, a, input')) return;
+      clearSelection();
+      refresh();
+    });
     document.addEventListener('keydown', function (e) {
       if (!state || state.phase !== 'player') return;
       if (e.key >= '1' && e.key <= '7') {
@@ -581,7 +655,7 @@
   }
 
   root.StarGame = {
-    startMatch: startMatch, boot: boot,
+    startMatch: startMatch, boot: boot, playAgain: playAgain,
     pickMode: pickMode, openTutorial: openTutorial, exitToTitle: exitToTitle,
   };
   // Test hook for the play-test driver (not part of the game UI).

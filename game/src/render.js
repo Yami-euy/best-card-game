@@ -351,19 +351,52 @@
     draw();
   }
 
+  // ---- Title: the new art (design-sheet-title-v2). The five parchment
+  // panels are PAPER, not buttons (Yami's correction): they carry the
+  // how-to-play strips, laid out to sit ON the paper so the row reads as
+  // printed on it. Mode buttons, TUTORIAL and SUARA are separate controls
+  // below the art / in the topbar — never the panels themselves.
+  var HOW_PANELS = [
+    { panel: 'pn-left', img: 'assets/draw-pick.png', cap: 'DRAW — kartu terbang' },
+    { panel: 'pn-m1', img: 'assets/slide-play.png', cap: 'PLAY — ke meja' },
+    { panel: 'pn-m2', img: 'assets/cast.png', cap: 'CAST — efek meledak' },
+  ];
+
   function showTitle() {
     var overlay = document.getElementById('overlay');
     overlay.innerHTML = '';
     setExitVisible(false);
     var ov = el('div', 'overlay-card title-card');
-    ov.style.backgroundImage = "url('assets/title-bg.png')";
     ov.appendChild(el('div', 'game-kicker', 'MAKE.FUN  ·  BEST CARD GAME'));
-    ov.appendChild(el('h1', 'game-title', 'STARLIGHT DUEL'));
-    ov.appendChild(el('div', 'game-sub', 'DUEL KARTU RASI BINTANG — 2 · 3 · 4 PEMAIN'));
-    ov.appendChild(el('div', 'title-rules',
-      'Main kartu makhluk ke meja, bayar Mana, serang makhluk lawan atau langsung ke nyawa lawan. ' +
-      'Nyawa 0 berarti keluar dari duel — yang terakhir hidup menang. Perkakas memperkuat makhluk, ' +
-      'jarahan menambah Mana. Klik kartu lalu klik target. Tombol 1–7 memilih kartu, Enter mengakhiri giliran.'));
+
+    var art = el('div', 'title-art');
+    art.style.backgroundImage = "url('assets/title-bg.png')";
+    // Title on the blue ribbon under the moon emblem.
+    art.appendChild(el('div', 'title-name', 'STARLIGHT DUEL'));
+    // How-to strips printed on the parchment panels (paper, not buttons).
+    HOW_PANELS.forEach(function (h) {
+      var p = el('div', 'panel-note ' + h.panel);
+      p.appendChild(imgEl(h.img, h.cap, 'how-img'));
+      p.appendChild(el('div', 'how-cap', h.cap));
+      art.appendChild(p);
+    });
+    // Middle panel 3 holds the two hand strips, stacked (both are "hands").
+    var pair = el('div', 'panel-note pn-m3 mini-pair');
+    [['assets/hand-normal.png', 'TANGANMU — 5 kartu'],
+     ['assets/opp-hidden.png', 'TANGAN LAWAN — tertutup']].forEach(function (h) {
+      var mini = el('div', 'how-mini');
+      mini.appendChild(imgEl(h[0], h[1], 'how-img'));
+      mini.appendChild(el('div', 'how-cap', h[1]));
+      pair.appendChild(mini);
+    });
+    art.appendChild(pair);
+    // Right scroll: the target strip.
+    var tgt = el('div', 'panel-note pn-right');
+    tgt.appendChild(imgEl('assets/opp-target.png', 'TARGET — merah', 'how-img'));
+    tgt.appendChild(el('div', 'how-cap', 'TARGET — merah'));
+    art.appendChild(tgt);
+    ov.appendChild(art);
+
     var modes = el('div', 'mode-row');
     [['2', '2 PLAYER', 'Duel klasik: kamu vs RASI BULAN.'],
      ['3', '3 PLAYER', 'Tiga kursi: + AWAN UNGU di kanan.'],
@@ -381,20 +414,6 @@
     var tutBtn = el('button', 'tut-btn', '?  CARA MAIN — TUTORIAL');
     tutBtn.addEventListener('click', function () { root.StarGame.openTutorial(); });
     ov.appendChild(tutBtn);
-    var how = el('div', 'how-row');
-    [['assets/draw-pick.png', 'DRAW — kartu terbang dari deck'],
-     ['assets/slide-play.png', 'PLAY — kartu meluncur ke meja'],
-     ['assets/cast.png', 'CAST — efek meledak bintang'],
-     ['assets/hand-normal.png', 'TANGANMU — 5 kartu mengipas'],
-     ['assets/opp-hidden.png', 'TANGAN LAWAN — selalu tertutup'],
-     ['assets/opp-target.png', 'TARGET — merah + reticle']].forEach(function (h) {
-      var cell = el('div', 'how-cell');
-      cell.appendChild(imgEl(h[0], h[1]));
-      cell.appendChild(el('div', 'how-cap', h[1]));
-      how.appendChild(cell);
-    });
-    ov.appendChild(how);
-    ov.appendChild(el('div', 'title-foot', 'Semua seni dari lembar desain Yami  ·  20 nyawa  ·  10 Mana maks'));
     overlay.appendChild(ov);
   }
 
@@ -402,6 +421,11 @@
     document.getElementById('overlay').innerHTML = '';
   }
 
+  // End screens: the art (victory.png wings+gold ribbon / defeat.png
+  // crystal+red ribbon) stays the backdrop; a huge VICTORY / DEFEAT word
+  // sits over it so the result is unmistakable at a glance, with the
+  // duel stats and two exits: MAIN LAGI starts a fresh match in the same
+  // mode, KE TITLE goes back to the title screen.
   function showEnd(won, stats) {
     var overlay = document.getElementById('overlay');
     overlay.innerHTML = '';
@@ -409,33 +433,49 @@
     var ov = el('div', 'overlay-card ' + (won ? 'win-card' : 'loss-card'));
     ov.style.backgroundImage = won
       ? "url('assets/victory.png')" : "url('assets/defeat.png')";
-    ov.appendChild(el('h1', 'end-title', won ? '★ DUEL DIMENANGKAN! ★' : 'BINTANGMU PADAM!'));
+    ov.appendChild(el('h1', 'end-word', won ? 'VICTORY' : 'DEFEAT'));
+    ov.appendChild(el('div', 'end-title', won ? '★ DUEL DIMENANGKAN! ★' : 'BINTANGMU PADAM!'));
     ov.appendChild(el('div', 'end-sub', won
       ? 'Rasi berpihak padamu — semua lawan keluar dari duel. Cahaya bintangmu bersinar paling terang.'
       : 'Lawamu menutup langit. Bintangmu padam — coba lagi dengan rencana baru.'));
     ov.appendChild(el('div', 'end-stats',
       'Giliran: ' + stats.turns + '  ·  Kartu dimainkan: ' + stats.cardsPlayed +
       '  ·  Damage diberikan: ' + stats.damageDealt));
-    var btn = el('button', 'big-btn', '↻  MAIN LAGI');
-    btn.addEventListener('click', function () {
+    var row = el('div', 'end-btns');
+    var again = el('button', 'big-btn', '↻  MAIN LAGI');
+    again.addEventListener('click', function () { root.StarGame.playAgain(); });
+    var toTitle = el('button', 'big-btn ghost', 'KE TITLE');
+    toTitle.addEventListener('click', function () {
       overlay.innerHTML = '';
       showTitle();
     });
-    ov.appendChild(btn);
+    row.appendChild(again); row.appendChild(toTitle);
+    ov.appendChild(row);
     overlay.appendChild(ov);
   }
 
   // Big selected-card preview (Holding Card POV): the chosen card, large,
   // over the holding-hands art, glowing with sparkles.
-  function showPreview(card) {
+  // The preview layer itself stays pointer-events:none (so taps pass
+  // through to targets underneath), but the BATAL button below the card
+  // is pointer-events:auto: the one cancel affordance that is always
+  // visible and always tappable, on desktop and on a phone (no Esc key).
+  // onCancel is the game's clearSelection + refresh, passed in by game.js.
+  function showPreview(card, onCancel) {
     var pv = document.getElementById('preview');
     pv.innerHTML = '';
     pv.style.backgroundImage = "url('assets/hold-pov.png')";
     pv.appendChild(cardElement(card, { preview: true }));
+    var cancel = el('button', 'preview-cancel', '✕  BATAL');
+    cancel.type = 'button';
+    cancel.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (onCancel) onCancel();
+    });
+    pv.appendChild(cancel);
     pv.appendChild(el('div', 'preview-hint',
-      card.target === 'none' ? 'Klik lagi untuk batal' :
-      card.target === 'enemyFace' ? 'Pilih wajah lawan untuk target' :
-      'Pilih target di meja — klik lagi untuk batal'));
+      card.target === 'enemyFace' ? 'Pilih wajah lawan — atau ketuk BATAL' :
+      'Pilih target di meja — atau ketuk BATAL'));
     pv.classList.add('on');
   }
 
@@ -445,6 +485,30 @@
   }
 
   // ---- FX: star bursts (cast) and petals (slide) ----
+  // Animated HAND that carries the played card to its slot (Yami's sheet
+  // 4): a transparent PNG (hand-player.png / hand-opponent.png — sky cut
+  // out, only hand + held card). from/to are viewport centres; the hand
+  // slides 450ms, rests, then fades out. The real card is already in its
+  // slot underneath (refresh ran first), so the hand never covers a
+  // value after landing — and the layer is pointer-events:none, so it
+  // can never block a click. The player hand is the same sprite rotated
+  // 180° (hand enters from below); the opponent hand comes from above.
+  function showHand(from, to, isOpponent) {
+    var layer = document.getElementById('fx-layer');
+    if (!layer || !from || !to) return;
+    var app = document.getElementById('app').getBoundingClientRect();
+    var img = imgEl(isOpponent ? 'assets/hand-opponent.png' : 'assets/hand-player.png', 'tangan');
+    img.className = 'play-hand' + (isOpponent ? ' hand-foe' : ' hand-me');
+    img.style.left = (from.x - app.left - 95) + 'px';
+    img.style.top = (from.y - app.top - 70) + 'px';
+    layer.appendChild(img);
+    void img.offsetWidth; // commit the start position, then slide
+    img.style.left = (to.x - app.left - 95) + 'px';
+    img.style.top = (to.y - app.top - 70) + 'px';
+    setTimeout(function () { img.classList.add('hand-gone'); }, 540);
+    setTimeout(function () { img.remove(); }, 820);
+  }
+
   function spawnBurst(kind) {
     var layer = document.getElementById('fx-layer');
     if (!layer) return;
@@ -484,7 +548,7 @@
     cardElement: cardElement, renderTable: renderTable,
     showTitle: showTitle, hideTitle: hideTitle, showEnd: showEnd,
     showPreview: showPreview, hidePreview: hidePreview,
-    spawnBurst: spawnBurst, setExitVisible: setExitVisible,
+    spawnBurst: spawnBurst, showHand: showHand, setExitVisible: setExitVisible,
     showConfirmExit: showConfirmExit, hideConfirm: hideConfirm,
     showTutorial: showTutorial,
   };

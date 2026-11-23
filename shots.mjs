@@ -417,6 +417,183 @@ async function main() {
     const errs = countErrors(events);
     console.log('console errors/exceptions:', errs.length);
     errs.slice(0, 5).forEach((e) => console.log(JSON.stringify(e.params).slice(0, 400)));
+  } else if (mode === 'fix3') {
+    // FIX-3 checks: (1) new title + how strips on paper, (2) parchment
+    // tutorial, (3) VICTORY/DEFEAT, (4) cancel paths, (g/h/i) play hands.
+    const check = (name, ok, extra) => console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + (extra ? ' — ' + extra : ''));
+    const uiClear = async () => evalJs(send, `(() => { const u = window.__star.ui;
+      return u.selectedTool === null && u.selectedAttacker === null && u.selectedHand === null &&
+        !document.getElementById('preview').classList.contains('on'); })()`);
+    const selectTargeted = async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const sel = await evalJs(send, `(() => {
+          const s = window.__star.getState();
+          if (!s || s.phase !== 'player') return null;
+          const c = s.sides[0].hand.find(x => x.target !== 'none' && x.cost <= s.sides[0].mana);
+          if (!c) return null;
+          const el = document.querySelector('.hand-row .card[data-uid="' + c.uid + '"]');
+          if (!el) return null;
+          el.click();
+          return { def: c.defId, uid: c.uid };
+        })()`);
+        if (sel) return sel;
+        await evalJs(send, `document.querySelector('.end-turn').click(); 'ended'`);
+        for (let i = 0; i < 20; i++) {
+          if (await evalJs(send, `window.__star.getState().phase`) === 'player') break;
+          await sleep(300);
+        }
+      }
+      return null;
+    };
+    // (1) New title: art box, ribbon title, 5 paper panels with 6 strips.
+    await send('Page.navigate', { url: BASE + '/?seed=11&mode=2' });
+    await sleep(900);
+    const t1 = await evalJs(send, `(() => {
+      const art = document.querySelector('.title-art');
+      if (!art) return null;
+      return { name: (document.querySelector('.title-name') || {}).textContent,
+        panels: document.querySelectorAll('.panel-note').length,
+        strips: document.querySelectorAll('.panel-note .how-img').length,
+        modes: document.querySelectorAll('.mode-btn').length,
+        tut: document.querySelector('.tut-btn') !== null,
+        bg: getComputedStyle(art).backgroundImage.slice(0, 30) };
+    })()`);
+    check('t1-title-v2', !!t1 && t1.name === 'STARLIGHT DUEL' && t1.panels === 5 && t1.strips === 6 && t1.modes === 3 && t1.tut, JSON.stringify(t1));
+    // (2) Parchment tutorial: open, check dark ink on paper, walk through.
+    await evalJs(send, `document.querySelector('.tut-btn').click(); 'tut'`);
+    await sleep(400);
+    const tutInk = await evalJs(send, `getComputedStyle(document.querySelector('.tut-text')).color`);
+    check('t2-tut-parchment', tutInk === 'rgb(59, 37, 3)', 'ink=' + tutInk);
+    for (let i = 0; i < 5; i++) {
+      await evalJs(send, `document.querySelector('.tut-nav .tut-btn-nav:not(.ghost)').click(); 'next'`);
+      await sleep(200);
+    }
+    await evalJs(send, `document.querySelector('.tut-nav .tut-btn-nav:not(.ghost)').click(); 'start'`);
+    await sleep(500);
+    check('t2-tut-to-duel', (await readState(send) || {}).phase === 'player');
+    // (4) Cancel paths, each from a fresh selection.
+    const sel1 = await selectTargeted();
+    check('t4-has-targeted-card', sel1 !== null, 'card=' + (sel1 && sel1.def));
+    if (sel1) {
+      const batalVis = await evalJs(send, `(() => { const b = document.querySelector('.preview-cancel');
+        return b && getComputedStyle(b).display !== 'none' && b.offsetParent !== null; })()`);
+      await evalJs(send, `document.querySelector('.preview-cancel').click(); 'batal'`);
+      await sleep(200);
+      check('t4-cancel-batal-btn', batalVis === true && await uiClear() === true);
+      const sel2 = await selectTargeted();
+      await evalJs(send, `document.querySelector('.hand-row .card[data-uid="${sel2.uid}"]').click(); 'same'`);
+      await sleep(200);
+      check('t4-cancel-same-card', await uiClear() === true);
+      const sel3 = await selectTargeted();
+      await evalJs(send, `(() => { const s = document.querySelector('.slot-empty'); if (s) s.click(); return !!s; })()`);
+      await sleep(200);
+      check('t4-cancel-empty-area', await uiClear() === true);
+      const sel4 = await selectTargeted();
+      await evalJs(send, `document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'})); 'esc'`);
+      await sleep(200);
+      check('t4-cancel-esc', await uiClear() === true);
+      // Select again, then switch to another card and play it.
+      const sel5 = await selectTargeted();
+      const switched = await evalJs(send, `(() => {
+        const s = window.__star.getState();
+        const other = s.sides[0].hand.find(x => x.uid !== '${sel5.uid}' && x.target !== 'none' && x.cost <= s.sides[0].mana);
+        if (!other) return null;
+        document.querySelector('.hand-row .card[data-uid="' + other.uid + '"]').click();
+        return { def: other.defId, sel: window.__star.ui.selectedTool ? window.__star.ui.selectedTool.defId : null,
+          prev: window.__star.ui.selectedTool ? window.__star.ui.selectedTool.uid : null };
+      })()`);
+      check('t4-switch-card', switched !== null && switched.sel === switched.def, JSON.stringify(switched));
+      await evalJs(send, `(() => { const b = document.querySelector('.preview-cancel'); if (b) b.click(); return !!b; })()`);
+      await sleep(200);
+      check('t4-cancel-after-switch', await uiClear() === true);
+    }
+    // (g) Player hand: play a creature, the hand sprite must appear mid-flight.
+    let handMe = false, handGone = false;
+    for (let attempt = 0; attempt < 3 && !handMe; attempt++) {
+      const played = await evalJs(send, `(() => {
+        const s = window.__star.getState();
+        if (!s || s.phase !== 'player') return null;
+        const c = s.sides[0].hand.find(x => x.kind === 'creature' && x.target === 'none' && x.cost <= s.sides[0].mana && s.sides[0].table.length < 5);
+        if (!c) return null;
+        document.querySelector('.hand-row .card[data-uid="' + c.uid + '"]').click();
+        return c.defId;
+      })()`);
+      if (played) {
+        await sleep(200);
+        handMe = await evalJs(send, `(() => { const h = document.querySelector('.play-hand.hand-me');
+          return !!h && h.src.indexOf('hand-player.png') >= 0; })()`);
+        await sleep(800);
+        handGone = await evalJs(send, `document.querySelector('.play-hand') === null`);
+      } else {
+        await evalJs(send, `document.querySelector('.end-turn').click(); 'ended'`);
+        for (let i = 0; i < 20; i++) {
+          if (await evalJs(send, `window.__star.getState().phase`) === 'player') break;
+          await sleep(300);
+        }
+      }
+    }
+    check('g-hand-player', handMe === true, 'appeared=' + handMe);
+    check('g-hand-removed', handGone === true);
+    // (h) Opponent hand: end the turn, watch the AI turn for a foe hand.
+    await evalJs(send, `document.querySelector('.end-turn').click(); 'ended'`);
+    let handFoe = false;
+    for (let i = 0; i < 40 && !handFoe; i++) {
+      handFoe = await evalJs(send, `(() => { const h = document.querySelector('.play-hand.hand-foe');
+        return !!h && h.src.indexOf('hand-opponent.png') >= 0; })()`);
+      if (!handFoe) await sleep(200);
+    }
+    check('h-hand-opponent', handFoe === true);
+    // (i) The hand sprite itself can never block a click: its layer and
+    // the sprite are pointer-events:none by construction. Probe directly
+    // instead of depending on a table card surviving the AI turn.
+    await sleep(1000);
+    const under = await evalJs(send, `(() => {
+      const gone = document.querySelector('.play-hand') === null;
+      const probe = document.createElement('img');
+      probe.className = 'play-hand hand-me';
+      document.getElementById('fx-layer').appendChild(probe);
+      const pe = getComputedStyle(probe).pointerEvents;
+      probe.remove();
+      return gone && pe === 'none' ? 'card' : 'gone=' + gone + ' pe=' + pe;
+    })()`);
+    check('i-hand-not-blocking', under === 'card', 'under=' + under);
+    // (3) End screens: VICTORY + MAIN LAGI starts a new match; DEFEAT + KE TITLE.
+    await send('Page.navigate', { url: BASE + '/?shot=win&mode=2&seed=7' });
+    await sleep(900);
+    const winWord = await evalJs(send, `(() => { const w = document.querySelector('.end-word');
+      return w ? w.textContent : null; })()`);
+    const winBtns = await evalJs(send, `(() => { const bs = [...document.querySelectorAll('.end-btns .big-btn')];
+      return bs.map(b => b.textContent.trim()); })()`);
+    check('t3-win-word', winWord === 'VICTORY', 'word=' + winWord);
+    check('t3-win-buttons', winBtns.join('|').indexOf('MAIN LAGI') >= 0 && winBtns.join('|').indexOf('KE TITLE') >= 0, JSON.stringify(winBtns));
+    await evalJs(send, `document.querySelector('.end-btns .big-btn:not(.ghost)').click(); 'again'`);
+    await sleep(600);
+    const stW = await readState(send);
+    check('t3-play-again', stW && stW.phase === 'player' && stW.turn === 1, 'phase=' + (stW && stW.phase) + ' turn=' + (stW && stW.turn));
+    await send('Page.navigate', { url: BASE + '/?shot=loss&mode=2&seed=7' });
+    await sleep(900);
+    const lossWord = await evalJs(send, `(() => { const w = document.querySelector('.end-word');
+      return w ? w.textContent : null; })()`);
+    check('t3-loss-word', lossWord === 'DEFEAT', 'word=' + lossWord);
+    await evalJs(send, `document.querySelector('.end-btns .big-btn.ghost').click(); 'totitle'`);
+    await sleep(500);
+    check('t3-loss-to-title', await evalJs(send, `document.querySelector('.title-card') !== null`) === true);
+    // (f) EXIT still works after the rework (fresh page load shows the
+    // tutorial on first mode pick — skip it like startMode does).
+    await evalJs(send, `document.querySelector('.mode-btn[data-mode="2"]').click(); 'm2'`);
+    await sleep(600);
+    if (await evalJs(send, `document.querySelector('.tut-card') !== null`)) {
+      await evalJs(send, `document.querySelector('.tut-skip').click(); 'skip'`);
+      await sleep(400);
+    }
+    await evalJs(send, `document.getElementById('exit-btn').click(); 'exit'`);
+    await sleep(300);
+    await evalJs(send, `document.querySelector('.confirm-yes').click(); 'yes'`);
+    await sleep(600);
+    check('f-exit', await evalJs(send, `document.querySelector('.title-card') !== null`) === true);
+    const errs = countErrors(events);
+    console.log('console errors/exceptions:', errs.length);
+    errs.slice(0, 5).forEach((e) => console.log(JSON.stringify(e.params).slice(0, 400)));
   }
   ws.close();
 }
