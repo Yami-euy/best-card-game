@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>STARLIGHT DUEL — Duel Kartu Rasi Bintang</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="brand">STARLIGHT <span>DUEL</span> — DUEL KARTU RASI BINTANG</div>
+    <div id="turn-label">GILIRAN 1 · GILIRANMU</div>
+    <div class="spacer"></div>
+    <button id="exit-btn" class="top-btn" title="Keluar dari duel">KELUAR</button>
+    <button id="mute-btn" class="top-btn" title="Suara">SUARA ON</button>
+  </div>
+  <div id="table"></div>
+  <div id="overlay"></div>
+  <div id="confirm"></div>
+  <div id="preview"></div>
+  <div id="fx-layer"></div>
+</div>
+<script src="src/cards.js"></script>
+<script src="src/deck.js"></script>
+<script src="src/ai.js"></script>
+<script src="src/bgm.js"></script>
+<script src="src/render.js"></script>
+<script src="src/game.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', function () { StarGame.boot(); });
+</script>
+</body>
+</html>
